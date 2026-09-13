@@ -1,6 +1,6 @@
 import os 
 from langchain_chroma import Chroma 
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
@@ -14,28 +14,37 @@ def get_embeddings():
         model_kwargs = {"device" : 'cpu'}
     )
 
-def build_vector_store(transcript : str)->Chroma:
-    print("Building vector Store")
+def build_vector_store(transcript: str) -> Chroma:
+    print("Building vector store...")
+
+    # Delete existing collection so previous sessions don't bleed in
+    embeddings = get_embeddings()
+    existing = Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=embeddings,
+        persist_directory=CHROMA_DIR,
+    )
+    existing.delete_collection()
+    print("Previous vector store cleared.")
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size = 500,
-        chunk_overlap = 50
+        chunk_size=500,
+        chunk_overlap=50,
     )
     chunks = splitter.split_text(transcript)
 
     docs = [
-        Document(page_content=chunk, metadata = {'chunk_index' : i})
-        for i,chunk in enumerate(chunks)
+        Document(page_content=chunk, metadata={"chunk_index": i})
+        for i, chunk in enumerate(chunks)
     ]
 
-    embeddings = get_embeddings()
     vector_store = Chroma.from_documents(
-        documents= docs,
+        documents=docs,
         embedding=embeddings,
         collection_name=COLLECTION_NAME,
-        persist_directory=CHROMA_DIR
+        persist_directory=CHROMA_DIR,
     )
-
+    print(f"Vector store built with {len(docs)} chunks.")
     return vector_store
 
 

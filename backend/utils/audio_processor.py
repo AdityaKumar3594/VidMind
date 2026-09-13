@@ -1,4 +1,5 @@
 import yt_dlp
+from yt_dlp.networking.impersonate import ImpersonateTarget
 from pydub import AudioSegment
 import os
 
@@ -34,18 +35,27 @@ def download_youtube_audio(url: str) -> str:
                 "preferredquality": "192",     # Audio bitrate
             }
         ],
-        "quiet": True,  # Suppress download logs
+        # Impersonate a real browser to avoid YouTube 403 blocks
+        "impersonate": ImpersonateTarget("chrome"),
+        # Retry on transient errors
+        "retries": 5,
+        "fragment_retries": 5,
+        "quiet": True,
+        "no_warnings": False,
     }
 
     # Download and process audio
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
 
-        # Generate final filename and replace original extension with .wav
-        filename = (
-            ydl.prepare_filename(info)
-            .replace(".webm", ".wav")
-            .replace(".m4a", ".wav")
+        # Generate final filename — strip whatever extension yt-dlp chose and use .wav
+        filename = os.path.splitext(ydl.prepare_filename(info))[0] + ".wav"
+
+    # Verify the file was actually created and is non-empty
+    if not os.path.exists(filename) or os.path.getsize(filename) == 0:
+        raise RuntimeError(
+            f"yt-dlp downloaded audio but the WAV file is missing or empty: {filename!r}. "
+            "Check that FFmpeg is on PATH and the YouTube URL is accessible."
         )
 
     return filename
@@ -105,6 +115,11 @@ def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
         # Extract current chunk
         chunk = audio[start:start + chunk_ms]
 
+        # Skip silent/empty chunks to avoid Whisper reshape errors
+        if len(chunk) == 0:
+            print(f"  Skipping empty chunk {i} (0ms).")
+            continue
+
         # Generate chunk filename
         chunk_path = f"{wav_path}_chunk_{i}.wav"
 
@@ -113,6 +128,12 @@ def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
 
         # Store path
         chunks.append(chunk_path)
+
+    if not chunks:
+        raise RuntimeError(
+            "Audio file produced zero valid chunks. "
+            "The downloaded audio may be empty or corrupted."
+        )
 
     return chunks
 

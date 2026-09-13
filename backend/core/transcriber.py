@@ -31,10 +31,15 @@ def load_model():
 
 def transcribe_chunk_whisper(chunk_path: str) -> str:
 
-    model = load_model()  
+    # Guard against empty audio files which cause Whisper's tensor reshape to fail
+    if not os.path.exists(chunk_path) or os.path.getsize(chunk_path) < 1024:
+        print(f"  ⚠ Skipping chunk (too small / missing): {chunk_path}")
+        return ""
 
-    result = model.transcribe(chunk_path, task="transcribe")  
-    return result["text"]  
+    model = load_model()
+
+    result = model.transcribe(chunk_path, task="transcribe")
+    return result["text"]
 
 
 def _send_to_sarvam(piece_path: str) -> str:
